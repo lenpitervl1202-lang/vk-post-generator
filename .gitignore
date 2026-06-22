@@ -1,0 +1,7 @@
+data/config.json
+data/debug.log
+data/uploads/
+data/*.json
+__pycache__/
+*.pyc
+.env
