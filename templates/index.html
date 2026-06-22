@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Генератор постов — GigaChat</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🤖 Генератор постов для товаров</h1>
+            <p class="subtitle">Создай оригинальный пост для соцсетей по ссылке на товар</p>
+        </header>
+
+        <div class="content">
+            <div class="form-section">
+                <form id="postForm">
+                    <div class="form-group">
+                        <label for="product_url">Ссылка на товар <span class="required">*</span></label>
+                        <div class="input-wrap">
+                            <input type="url" id="product_url" name="product_url"
+                                   placeholder="https://kaspi.kz/shop/product/..."
+                                   class="form-input" required oninput="toggleClearBtn()">
+                            <button type="button" class="input-clear" id="clearUrlBtn" onclick="clearUrl()" style="display:none;">✕</button>
+                        </div>
+                        <span class="hint">Вставьте ссылку на товар из интернет-магазина</span>
+                    </div>
+
+
+
+                    <div class="form-group">
+                        <label>Фото для поста</label>
+                        <div class="image-toggle">
+                            <label class="image-option active" id="imgUrlLabel" onclick="switchImageInput('url')">
+                                <input type="radio" name="img_type" value="url" checked hidden> 🔗 Ссылка
+                            </label>
+                            <label class="image-option" id="imgFileLabel" onclick="switchImageInput('file')">
+                                <input type="radio" name="img_type" value="file" hidden> 📁 Файл
+                            </label>
+                        </div>
+                        <div id="imgUrlInput">
+                            <input type="url" id="image_url" name="image_url"
+                                   placeholder="https://example.com/photo.jpg"
+                                   class="form-input" oninput="previewImage()">
+                        </div>
+                        <div id="imgFileInput" style="display:none;">
+                            <input type="file" id="image_file" name="image_file"
+                                   accept="image/*" class="form-input file-input" onchange="previewImageFile(this)">
+                        </div>
+                        <div class="image-preview" id="imagePreview" style="display:none;">
+                            <img id="previewImg" src="" alt="preview">
+                            <button type="button" class="image-preview-del" onclick="clearImage()">✕</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Настроение поста</label>
+                        <div class="mood-grid">
+                            {% for key, label in moods.items() %}
+                            <label class="mood-card {% if loop.first %}active{% endif %}">
+                                <input type="radio" name="mood" value="{{ key }}"
+                                       {% if loop.first %}checked{% endif %}
+                                       onchange="selectMood(this)">
+                                <span class="mood-label">{{ label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="generateBtn">
+                        ✨ Сформировать пост
+                    </button>
+                    <button type="button" class="btn btn-improve" id="improveBtn" style="display:none;" onclick="improvePost()">
+                        🔄 Улучшить пост
+                    </button>
+                </form>
+
+                <div class="lists-section">
+                    <div class="list-block" id="favoritesBlock">
+                        <h3>⭐ Избранное</h3>
+                        <div id="favoritesList"></div>
+                    </div>
+                    <div class="list-block" id="scheduledBlock">
+                        <h3>📅 Запланированные</h3>
+                        <div id="scheduledList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-section" id="resultSection">
+                <div class="result-placeholder" id="placeholder">
+                    <div class="placeholder-icon">📋</div>
+                    <p>Здесь появится готовый пост</p>
+                    <p class="placeholder-hint">Вставьте ссылку на товар и нажмите «Сформировать пост»</p>
+                </div>
+
+                <div class="result-content" id="resultContent" style="display:none;">
+                    <div class="result-header">
+                        <h2>Готовый пост</h2>
+                        <div class="result-actions">
+                            <button class="btn btn-sm btn-fav" id="favBtn" onclick="toggleFav()">⭐ В избранное</button>
+                            <button class="btn btn-sm btn-copy" onclick="copyPost()">📋 Копировать</button>
+                            <button class="btn btn-sm btn-edit" id="editBtn" onclick="toggleEdit()">✏️ Редактировать</button>
+                        </div>
+                    </div>
+                    <div class="post-body" id="postBody">
+                        <div class="post-image" id="postImage" style="display:none;">
+                            <img id="postPreviewImg" src="" alt="">
+                        </div>
+                        <div class="post-preview" id="postPreview">
+                            <div class="post-text" id="postText"></div>
+                            <textarea class="post-edit-area" id="postEditArea" style="display:none;"></textarea>
+                        </div>
+                    </div>
+                    <div class="fmt-toolbar" id="fmtToolbar">
+                        <button class="fmt-btn" onclick="fmtAlign('left', event)" title="По левому краю">≡</button>
+                        <button class="fmt-btn" onclick="fmtAlign('center', event)" title="По центру">≡</button>
+                        <button class="fmt-btn" onclick="fmtAlign('justify', event)" title="По ширине">≡</button>
+                        <span class="fmt-sep"></span>
+                        <button class="fmt-btn fmt-bold" onclick="fmtInline('bold')" title="Жирный"><b>B</b></button>
+                        <button class="fmt-btn fmt-italic" onclick="fmtInline('italic')" title="Курсив"><i>I</i></button>
+                        <button class="fmt-btn fmt-oblique" onclick="fmtInline('oblique')" title="Наклонный"><span style="font-style:oblique">I</span></button>
+                        <span class="fmt-sep"></span>
+                        <button class="fmt-btn" id="emojiBtn" onclick="toggleEmoji()" title="Смайлики">😊</button>
+                        <div class="emoji-panel" id="emojiPanel">
+                            <div class="emoji-grid">
+                                <span onclick="insertEmoji('😊')">😊</span><span onclick="insertEmoji('👍')">👍</span>
+                                <span onclick="insertEmoji('🔥')">🔥</span><span onclick="insertEmoji('💥')">💥</span>
+                                <span onclick="insertEmoji('💪')">💪</span><span onclick="insertEmoji('🎉')">🎉</span>
+                                <span onclick="insertEmoji('✨')">✨</span><span onclick="insertEmoji('⭐')">⭐</span>
+                                <span onclick="insertEmoji('💎')">💎</span><span onclick="insertEmoji('🚀')">🚀</span>
+                                <span onclick="insertEmoji('💰')">💰</span><span onclick="insertEmoji('🎯')">🎯</span>
+                                <span onclick="insertEmoji('👌')">👌</span><span onclick="insertEmoji('✅')">✅</span>
+                                <span onclick="insertEmoji('❌')">❌</span><span onclick="insertEmoji('💡')">💡</span>
+                                <span onclick="insertEmoji('📢')">📢</span><span onclick="insertEmoji('🆕')">🆕</span>
+                                <span onclick="insertEmoji('🏆')">🏆</span><span onclick="insertEmoji('🎁')">🎁</span>
+                                <span onclick="insertEmoji('👑')">👑</span><span onclick="insertEmoji('💯')">💯</span>
+                                <span onclick="insertEmoji('🤩')">🤩</span><span onclick="insertEmoji('🥇')">🥇</span>
+                                <span onclick="insertEmoji('💥')">💥</span><span onclick="insertEmoji('⚡')">⚡</span>
+                                <span onclick="insertEmoji('🎊')">🎊</span><span onclick="insertEmoji('🎈')">🎈</span>
+                                <span onclick="insertEmoji('👉')">👉</span><span onclick="insertEmoji('👈')">👈</span>
+                                <span onclick="insertEmoji('👇')">👇</span><span onclick="insertEmoji('👆')">👆</span>
+                                <span onclick="insertEmoji('🤝')">🤝</span><span onclick="insertEmoji('👋')">👋</span>
+                                <span onclick="insertEmoji('❤️')">❤️</span><span onclick="insertEmoji('💛')">💛</span>
+                                <span onclick="insertEmoji('💚')">💚</span><span onclick="insertEmoji('💙')">💙</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="publish-section">
+                        <div class="publish-row">
+                            <button class="btn btn-vk" onclick="publishNow()">📢 Опубликовать сейчас</button>
+                            <button class="btn btn-vk-secondary" onclick="showSchedule()">🕐 Запланировать</button>
+                        </div>
+                        <div class="schedule-form" id="scheduleForm" style="display:none;">
+                            <input type="datetime-local" id="scheduleTime" class="form-input schedule-input">
+                            <button class="btn btn-sm btn-vk" onclick="schedulePost()">Подтвердить</button>
+                            <button class="btn btn-sm btn-cancel" onclick="hideSchedule()">Отмена</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-error" id="resultError" style="display:none;">
+                    <div class="error-icon">⚠️</div>
+                    <p id="errorMessage">Ошибка</p>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>Работает на GigaChat — без базы данных, без сложных настроек</p>
+        </footer>
+    </div>
+
+    <!-- Modal for publish/schedule -->
+    <div class="modal-overlay" id="publishModal" style="display:none;" onclick="closeModal(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">📢 Публикация во ВКонтакте</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <p id="modalMessage"></p>
+            </div>
+            <div class="modal-footer" id="modalFooter">
+                <button class="btn btn-sm btn-cancel" onclick="closeModal()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let currentPostText = '';
+        let isFavorited = false;
+
+        function toggleClearBtn() {
+            const input = document.getElementById('product_url');
+            document.getElementById('clearUrlBtn').style.display = input.value ? 'flex' : 'none';
+        }
+
+        function clearUrl() {
+            document.getElementById('product_url').value = '';
+            toggleClearBtn();
+            document.getElementById('product_url').focus();
+        }
+
+        let uploadedImagePath = '';
+
+        function switchImageInput(mode) {
+            document.getElementById('imgUrlInput').style.display = mode === 'url' ? 'block' : 'none';
+            document.getElementById('imgFileInput').style.display = mode === 'file' ? 'block' : 'none';
+            document.getElementById('imgUrlLabel').classList.toggle('active', mode === 'url');
+            document.getElementById('imgFileLabel').classList.toggle('active', mode === 'file');
+            if (mode === 'url') document.getElementById('image_file').value = '';
+            else document.getElementById('image_url').value = '';
+            clearImage();
+        }
+
+        function previewImage() {
+            const url = document.getElementById('image_url').value;
+            const preview = document.getElementById('imagePreview');
+            const img = document.getElementById('previewImg');
+            if (url) {
+                img.src = url;
+                img.onerror = function(){ preview.innerHTML = '<p style="padding:12px;color:#e17055">⚠️ Фото не загрузилось</p>'; };
+                preview.style.display = 'block';
+                uploadedImagePath = url;
+            } else {
+                clearImage();
+            }
+        }
+
+        async function previewImageFile(input) {
+            const preview = document.getElementById('imagePreview');
+            const img = document.getElementById('previewImg');
+            const file = input.files[0];
+            if (!file) { clearImage(); return; }
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const r = await fetch('/upload-image', { method: 'POST', body: fd });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error);
+                uploadedImagePath = '/uploads/' + d.path;
+                img.src = uploadedImagePath;
+                preview.style.display = 'block';
+            } catch (err) {
+                showToast('Ошибка загрузки фото: ' + err.message, true);
+                clearImage();
+            }
+        }
+
+        function clearImage() {
+            document.getElementById('imagePreview').style.display = 'none';
+            document.getElementById('previewImg').src = '';
+            uploadedImagePath = '';
+        }
+
+        function selectMood(el) {
+            document.querySelectorAll('.mood-card').forEach(c => c.classList.remove('active'));
+            el.closest('.mood-card').classList.add('active');
+        }
+
+        function showToast(msg, isError) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show' + (isError ? ' toast-error' : '');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        function resetResult() {
+            currentPostText = '';
+            isFavorited = false;
+            document.getElementById('resultContent').style.display = 'none';
+            document.getElementById('resultError').style.display = 'none';
+            document.getElementById('placeholder').style.display = 'flex';
+            document.getElementById('postImage').style.display = 'none';
+            document.getElementById('improveBtn').style.display = 'none';
+            hideSchedule();
+        }
+
+        function openModal(title, msg, isError) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = msg;
+            document.getElementById('modalMessage').style.color = isError ? '#e17055' : '#2d3436';
+            document.getElementById('publishModal').style.display = 'flex';
+        }
+
+        function closeModal(e) {
+            if (e && e.target !== document.getElementById('publishModal')) return;
+            document.getElementById('publishModal').style.display = 'none';
+        }
+
+        async function toggleFav() {
+            if (!currentPostText) return;
+            const fd = new FormData();
+            fd.append('post_text', currentPostText);
+            try {
+                const r = await fetch('/favorite', { method: 'POST', body: fd });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error);
+                isFavorited = d.favorited;
+                document.getElementById('favBtn').textContent = isFavorited ? '⭐ В избранном' : '⭐ В избранное';
+                document.getElementById('favBtn').classList.toggle('btn-fav-active', isFavorited);
+                showToast(d.message);
+                loadFavorites();
+                if (isFavorited) resetResult();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        async function publishNow() {
+            if (!currentPostText) return;
+            const fd = new FormData();
+            fd.append('post_text', currentPostText);
+            if (uploadedImagePath) fd.append('image_path', uploadedImagePath);
+            try {
+                const r = await fetch('/publish', { method: 'POST', body: fd });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error);
+                openModal('✅ Опубликовано!', d.message + ' (ID: ' + d.post_id + ')');
+                resetResult();
+                clearImage();
+                loadScheduled();
+            } catch (err) {
+                openModal('❌ Ошибка', err.message, true);
+            }
+        }
+
+        function showSchedule() {
+            document.getElementById('scheduleForm').style.display = 'flex';
+            const now = new Date();
+            now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+            document.getElementById('scheduleTime').min = now.toISOString().slice(0, 16);
+            document.getElementById('scheduleTime').value = now.toISOString().slice(0, 16);
+        }
+
+        function hideSchedule() {
+            document.getElementById('scheduleForm').style.display = 'none';
+        }
+
+        async function schedulePost() {
+            const time = document.getElementById('scheduleTime').value;
+            if (!time) { showToast('Выберите время', true); return; }
+            const fd = new FormData();
+            fd.append('post_text', currentPostText);
+            fd.append('publish_at', time);
+            if (uploadedImagePath) fd.append('image_path', uploadedImagePath);
+            try {
+                const r = await fetch('/schedule', { method: 'POST', body: fd });
+                const d = await r.json();
+                if (!r.ok) throw new Error(d.error);
+                showToast(d.message);
+                resetResult();
+                clearImage();
+                loadScheduled();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        async function loadFavorites() {
+            try {
+                const r = await fetch('/favorites');
+                const d = await r.json();
+                const list = document.getElementById('favoritesList');
+                if (!d.posts || d.posts.length === 0) {
+                    list.innerHTML = '<p class="list-empty">Нет сохранённых постов</p>';
+                    return;
+                }
+                list.innerHTML = d.posts.map(p => {
+                    const textAttr = p.text.replace(/"/g, '&quot;');
+                    const display = escapeHtml(p.text).replace(/\n+/g, '\n').replace(/ {2,}/g, ' ').trim();
+                    return `<div class="list-item" data-text="${textAttr}" onclick="selectFav(this)">
+                        <div class="list-item-text">${display}</div>
+                        <button class="list-item-del" data-text="${textAttr}" onclick="event.stopPropagation(); removeFav(this)">✕</button>
+                    </div>`;
+                }).join('');
+            } catch {}
+        }
+
+        function selectFav(el) {
+            const text = el.dataset.text;
+            currentPostText = text;
+            document.getElementById('postText').innerHTML = renderPostText(text);
+            currentPostText = text;
+            document.getElementById('resultContent').style.display = 'block';
+            document.getElementById('favBtn').textContent = '⭐ В избранном';
+            document.getElementById('favBtn').classList.add('btn-fav-active');
+            isFavorited = true;
+        }
+
+        async function removeFav(el) {
+            const text = el.dataset.text;
+            const fd = new FormData();
+            fd.append('post_text', text);
+            await fetch('/favorite', { method: 'POST', body: fd });
+            showToast('Удалено из избранного');
+            loadFavorites();
+        }
+
+        async function loadScheduled() {
+            try {
+                const r = await fetch('/scheduled');
+                const d = await r.json();
+                const list = document.getElementById('scheduledList');
+                const posts = (d.posts || []).filter(p => !p.published);
+                if (posts.length === 0) {
+                    list.innerHTML = '<p class="list-empty">Нет запланированных постов</p>';
+                    return;
+                }
+                list.innerHTML = posts.map(p => {
+                    const display = escapeHtml(p.text).replace(/\n+/g, '\n').replace(/ {2,}/g, ' ').trim();
+                    return `<div class="list-item">
+                        <div class="list-item-text"><span class="list-item-date">🕐 ${p.publish_at.replace('T', ' ')}</span>${display}</div>
+                        <button class="list-item-del" onclick="removeScheduled('${p.id}')">✕</button>
+                    </div>`;
+                }).join('');
+            } catch {}
+        }
+
+        async function removeScheduled(id) {
+            await fetch('/scheduled/' + id, { method: 'DELETE' });
+            showToast('Запланированный пост удалён');
+            loadScheduled();
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        document.getElementById('postForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('generateBtn');
+            const placeholder = document.getElementById('placeholder');
+            const rContent = document.getElementById('resultContent');
+            const rError = document.getElementById('resultError');
+            const preview = document.getElementById('postPreview');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ GigaChat генерирует...';
+            placeholder.style.display = 'none';
+            rContent.style.display = 'none';
+            rError.style.display = 'none';
+
+            const formData = new FormData(this);
+            if (uploadedImagePath) formData.append('image_path', uploadedImagePath);
+            try {
+                const resp = await fetch('/generate', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error);
+                currentPostText = data.post;
+                document.getElementById('postText').innerHTML = renderPostText(data.post);
+                rContent.style.display = 'block';
+                isFavorited = false;
+                if (data.image) {
+                    uploadedImagePath = '/uploads/' + data.image;
+                    document.getElementById('image_url').value = uploadedImagePath;
+                    var pi = document.getElementById('postImage');
+                    var pip2 = document.getElementById('postPreviewImg');
+                    pi.style.display = 'block';
+                    pip2.src = uploadedImagePath;
+                    pip2.onerror = function(){ pi.innerHTML='<p style="padding:20px;color:#e17055">⚠️ Фото не загрузилось</p>'; };
+                    previewImage();
+                } else {
+                    document.getElementById('postImage').style.display = 'none';
+                }
+                document.getElementById('improveBtn').style.display = 'block';
+                document.getElementById('favBtn').textContent = '⭐ В избранное';
+                document.getElementById('favBtn').classList.remove('btn-fav-active');
+                hideSchedule();
+            } catch (err) {
+                document.getElementById('errorMessage').textContent = err.message;
+                rError.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '✨ Сформировать пост';
+            }
+        });
+
+        async function improvePost() {
+            if (!currentPostText) return;
+            const btn = document.getElementById('improveBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Улучшаю...';
+            const fd = new FormData();
+            fd.append('post_text', currentPostText);
+            fd.append('mood', document.querySelector('input[name="mood"]:checked')?.value || 'креативный');
+            try {
+                const r = await fetch('/improve', { method: 'POST', body: fd });
+                const data = await r.json();
+                if (!r.ok) throw new Error(data.error);
+                currentPostText = data.post;
+                document.getElementById('postText').innerHTML = renderPostText(data.post);
+                document.getElementById('postPreview').style.display = 'block';
+                document.getElementById('resultContent').style.display = 'block';
+                if (isEditing) {
+                    document.getElementById('postEditArea').value = data.post;
+                }
+                showToast('✅ Пост улучшен');
+            } catch (err) {
+                showToast(err.message, true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔄 Улучшить пост';
+            }
+        }
+
+        let isEditing = false;
+
+        function toggleEdit() {
+            const textDiv = document.getElementById('postText');
+            const editArea = document.getElementById('postEditArea');
+            const btn = document.getElementById('editBtn');
+            isEditing = !isEditing;
+            if (isEditing) {
+                editArea.value = currentPostText;
+                textDiv.style.display = 'none';
+                editArea.style.display = 'block';
+                btn.textContent = '💾 Сохранить';
+                btn.classList.add('btn-edit-active');
+                editArea.focus();
+            } else {
+                currentPostText = editArea.value;
+                textDiv.innerHTML = renderPostText(currentPostText);
+                textDiv.style.display = 'block';
+                editArea.style.display = 'none';
+                btn.textContent = '✏️ Редактировать';
+                btn.classList.remove('btn-edit-active');
+            }
+        }
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && isEditing) {
+                e.preventDefault();
+                toggleEdit();
+            }
+        });
+
+        function renderPostText(text) {
+            text = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            text = text.replace(/\n/g, '<br>');
+            return text;
+        }
+
+        function syncCurrentText() {
+            currentPostText = document.getElementById('postText').textContent;
+        }
+
+        function toggleEmoji() {
+            var panel = document.getElementById('emojiPanel');
+            panel.classList.toggle('show');
+        }
+
+        function insertEmoji(emoji) {
+            document.getElementById('emojiPanel').classList.remove('show');
+            if (isEditing) {
+                var ta = document.getElementById('postEditArea');
+                var start = ta.selectionStart;
+                var before = ta.value.substring(0, start);
+                var after = ta.value.substring(ta.selectionEnd);
+                ta.value = before + emoji + after;
+                var pos = start + emoji.length;
+                ta.selectionStart = pos;
+                ta.selectionEnd = pos;
+                ta.focus();
+                currentPostText = ta.value;
+                document.getElementById('postText').innerHTML = renderPostText(currentPostText);
+            } else {
+                var sel = window.getSelection();
+                if (sel.rangeCount) {
+                    if (!sel.getRangeAt(0).collapsed) sel.deleteFromDocument();
+                    var range = sel.getRangeAt(0);
+                    range.insertNode(document.createTextNode(emoji));
+                    range.collapse(false);
+                }
+                syncCurrentText();
+            }
+        }
+
+        function fmtAlign(align, e) {
+            const textDiv = document.getElementById('postText');
+            const editArea = document.getElementById('postEditArea');
+            if (isEditing) {
+                editArea.style.textAlign = align;
+            } else {
+                textDiv.style.textAlign = align;
+            }
+            document.querySelectorAll('.fmt-toolbar .fmt-btn').forEach(b => b.classList.remove('fmt-active'));
+            (e || event).target.classList.add('fmt-active');
+        }
+
+        function fmtInline(style) {
+            if (isEditing) return;
+            var tag;
+            if (style === 'bold') tag = 'b';
+            else if (style === 'italic') tag = 'i';
+            else if (style === 'oblique') tag = 'u';
+            var sel = window.getSelection();
+            if (!sel.rangeCount) return;
+            var range = sel.getRangeAt(0);
+            if (range.collapsed) {
+                var txt = style === 'bold' ? 'жирный текст' : style === 'italic' ? 'курсив' : 'наклонный';
+                var el = document.createElement(tag);
+                el.textContent = txt;
+                range.insertNode(el);
+            } else {
+                var el = document.createElement(tag);
+                try { range.surroundContents(el); }
+                catch(e) {
+                    var frag = range.extractContents();
+                    el.appendChild(frag);
+                    range.insertNode(el);
+                }
+            }
+            sel.removeAllRanges();
+            syncCurrentText();
+        }
+
+        async function copyPost() {
+            const text = currentPostText;
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            showToast('✅ Пост скопирован');
+        }
+
+        document.addEventListener('click', function(e) {
+            var panel = document.getElementById('emojiPanel');
+            var btn = document.getElementById('emojiBtn');
+            if (!panel.contains(e.target) && e.target !== btn) {
+                panel.classList.remove('show');
+            }
+        });
+
+        loadFavorites();
+        loadScheduled();
+    </script>
+</body>
+</html>
