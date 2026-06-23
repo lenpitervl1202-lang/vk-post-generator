@@ -11,7 +11,7 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 # ===== НАСТРОЙКИ ГЕНЕРАТОРА =====
-GIGACHAT_CREDENTIALS = os.environ.get("GIGACHAT_CREDENTIALS") or "MDE5ZDE5YjUtOWRmZS03YWU1LWFmMTktZTUwNmI1Y2VjNDY4OmNhMGEyYzY5LWMzZDYtNDZhYS1hODg1LTA3MDE0ZGEwNjRmYQ=="
+GIGACHAT_CREDENTIALS = os.environ.get("GIGACHAT_CREDENTIALS")
 GIGACHAT_MODEL = "GigaChat"
 VERIFY_SSL = False
 
@@ -276,7 +276,7 @@ def upload_to_github(image_path):
         req.add_header("Accept", "application/vnd.github.v3+json")
         req.add_header("User-Agent", "PostGenerator/1.0")
         urlopen(req).read()
-        blob = f"https://github.com/{owner}/{repo_name}/blob/main/{gh_path}"
+        blob = f"https://raw.githubusercontent.com/{owner}/{repo_name}/main/{gh_path}"
         dbg(f"GitHub: success -> {blob}")
         return blob
     except Exception as e:
@@ -416,7 +416,7 @@ def publish_to_vk(post_text, image_path=None):
     dbg(f"publish: SUCCESS post_id={resp['response']['post_id']}")
     result = {"success": True, "post_id": resp["response"]["post_id"]}
     if image_url and not attachments:
-        result["photo_warning"] = "Фото добавлено ссылкой в текст поста."
+        result["photo_warning"] = "фото ссылкой (для встроенного задайте user_token в /vk-setup)"
     return result
 
 # ===== ПЛАНИРОВЩИК ОТЛОЖЕННЫХ ПОСТОВ =====
@@ -540,9 +540,10 @@ def publish():
     result = publish_to_vk(post_text, image_path or None)
     if result["success"]:
         msg = "Пост опубликован!"
+        resp = {"message": msg, "post_id": result["post_id"]}
         if result.get("photo_warning"):
-            msg += f" (фото: {result['photo_warning']})"
-        return jsonify({"message": msg, "post_id": result["post_id"]})
+            resp["photo_warning"] = result["photo_warning"]
+        return jsonify(resp)
     return jsonify({"error": result["error"]}), 400
 
 @app.route("/schedule", methods=["POST"])
