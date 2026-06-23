@@ -321,7 +321,8 @@
                 const r = await fetch('/publish', { method: 'POST', body: fd });
                 const d = await r.json();
                 if (!r.ok) throw new Error(d.error);
-                openModal('✅ Опубликовано!', d.message + ' (ID: ' + d.post_id + ')');
+                var extra = d.photo_warning ? '\n\n⚠️ ' + d.photo_warning : '';
+                openModal('✅ Опубликовано!', d.message + ' (ID: ' + d.post_id + ')' + extra);
                 resetResult();
                 clearImage();
                 loadScheduled();
