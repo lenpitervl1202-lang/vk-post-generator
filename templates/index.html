@@ -31,27 +31,8 @@
 
                     <div class="form-group">
                         <label>Фото для поста</label>
-                        <div class="image-toggle">
-                            <label class="image-option active" id="imgUrlLabel" onclick="switchImageInput('url')">
-                                <input type="radio" name="img_type" value="url" checked hidden> 🔗 Ссылка
-                            </label>
-                            <label class="image-option" id="imgFileLabel" onclick="switchImageInput('file')">
-                                <input type="radio" name="img_type" value="file" hidden> 📁 Файл
-                            </label>
-                        </div>
-                        <div id="imgUrlInput">
-                            <input type="url" id="image_url" name="image_url"
-                                   placeholder="https://example.com/photo.jpg"
-                                   class="form-input" oninput="previewImage()">
-                        </div>
-                        <div id="imgFileInput" style="display:none;">
-                            <input type="file" id="image_file" name="image_file"
-                                   accept="image/*" class="form-input file-input" onchange="previewImageFile(this)">
-                        </div>
-                        <div class="image-preview" id="imagePreview" style="display:none;">
-                            <img id="previewImg" src="" alt="preview">
-                            <button type="button" class="image-preview-del" onclick="clearImage()">✕</button>
-                        </div>
+                        <div id="imageList"></div>
+                        <button type="button" class="btn btn-sm btn-add-image" onclick="addImage()">+ Добавить фото</button>
                     </div>
                     <div class="form-group">
                         <label>Настроение поста</label>
@@ -204,58 +185,98 @@
             document.getElementById('product_url').focus();
         }
 
-        let uploadedImagePath = '';
+        let uploadedImagePaths = [];
+        let imageIdCounter = 0;
 
-        function switchImageInput(mode) {
-            document.getElementById('imgUrlInput').style.display = mode === 'url' ? 'block' : 'none';
-            document.getElementById('imgFileInput').style.display = mode === 'file' ? 'block' : 'none';
-            document.getElementById('imgUrlLabel').classList.toggle('active', mode === 'url');
-            document.getElementById('imgFileLabel').classList.toggle('active', mode === 'file');
-            if (mode === 'url') document.getElementById('image_file').value = '';
-            else document.getElementById('image_url').value = '';
-            clearImage();
+        function addImage(url) {
+            var id = ++imageIdCounter;
+            var html = '<div class="image-item" id="imgItem' + id + '">';
+            html += '<div class="image-item-row">';
+            html += '<input type="url" class="form-input img-url-input" placeholder="https://example.com/photo.jpg" oninput="previewImageAt(' + id + ')" id="imgUrl' + id + '">';
+            html += '<label class="btn btn-sm btn-file-label">📁 <input type="file" accept="image/*" class="file-input-hidden" onchange="previewFileAt(' + id + ', this)"></label>';
+            html += '<button type="button" class="btn btn-sm btn-danger" onclick="removeImage(' + id + ')">✕</button>';
+            html += '</div>';
+            html += '<div class="image-preview" id="imgPreview' + id + '" style="display:none;">';
+            html += '<img id="imgPreviewImg' + id + '" src="" alt="preview">';
+            html += '</div>';
+            html += '<input type="hidden" id="imgPath' + id + '" value="">';
+            html += '</div>';
+            document.getElementById('imageList').insertAdjacentHTML('beforeend', html);
+            if (url) {
+                document.getElementById('imgUrl' + id).value = url;
+                previewImageAt(id);
+            }
         }
 
-        function previewImage() {
-            const url = document.getElementById('image_url').value;
-            const preview = document.getElementById('imagePreview');
-            const img = document.getElementById('previewImg');
+        function removeImage(id) {
+            var el = document.getElementById('imgItem' + id);
+            if (el) {
+                var path = document.getElementById('imgPath' + id).value;
+                uploadedImagePaths = uploadedImagePaths.filter(function(p) { return p !== path; });
+                el.remove();
+            }
+        }
+
+        function clearAllImages() {
+            document.getElementById('imageList').innerHTML = '';
+            uploadedImagePaths = [];
+        }
+
+        function previewImageAt(id) {
+            var url = document.getElementById('imgUrl' + id).value;
+            var preview = document.getElementById('imgPreview' + id);
+            var img = document.getElementById('imgPreviewImg' + id);
+            var hidden = document.getElementById('imgPath' + id);
             if (url) {
                 img.src = url;
                 img.onerror = function(){ showToast('⚠️ Фото не загрузилось', true); preview.style.display='none'; };
                 preview.style.display = 'block';
-                uploadedImagePath = url;
+                hidden.value = url;
+                uploadedImagePaths.push(url);
+                dedupePaths();
             } else {
-                clearImage();
+                preview.style.display = 'none';
+                hidden.value = '';
+                uploadedImagePaths = uploadedImagePaths.filter(function(p) { return p !== hidden.value; });
             }
         }
 
-        async function previewImageFile(input) {
-            const preview = document.getElementById('imagePreview');
-            const img = document.getElementById('previewImg');
-            const file = input.files[0];
-            if (!file) { clearImage(); return; }
-            const fd = new FormData();
+        async function previewFileAt(id, input) {
+            var file = input.files[0];
+            if (!file) return;
+            var fd = new FormData();
             fd.append('file', file);
             try {
-                const r = await fetch('/upload-image', { method: 'POST', body: fd });
-                const d = await r.json();
+                var r = await fetch('/upload-image', { method: 'POST', body: fd });
+                var d = await r.json();
                 if (!r.ok) throw new Error(d.error);
-                uploadedImagePath = '/uploads/' + d.path;
-                img.src = uploadedImagePath;
+                var path = '/uploads/' + d.path;
+                var preview = document.getElementById('imgPreview' + id);
+                var img = document.getElementById('imgPreviewImg' + id);
+                var hidden = document.getElementById('imgPath' + id);
+                img.src = path;
                 img.onerror = function(){ showToast('⚠️ Фото не загрузилось', true); preview.style.display='none'; };
                 preview.style.display = 'block';
+                hidden.value = path;
+                uploadedImagePaths.push(path);
+                dedupePaths();
             } catch (err) {
                 showToast('Ошибка загрузки фото: ' + err.message, true);
-                clearImage();
             }
         }
 
-        function clearImage() {
-            document.getElementById('imagePreview').style.display = 'none';
-            var ci = document.getElementById('previewImg');
-            if (ci) ci.src = '';
-            uploadedImagePath = '';
+        function dedupePaths() {
+            uploadedImagePaths = uploadedImagePaths.filter(function(v, i, a) { return a.indexOf(v) === i; });
+        }
+
+        function getAllImagePaths() {
+            var paths = [];
+            var items = document.querySelectorAll('#imageList .image-item');
+            items.forEach(function(item) {
+                var hidden = item.querySelector('input[type="hidden"]');
+                if (hidden && hidden.value) paths.push(hidden.value);
+            });
+            return paths;
         }
 
         function selectMood(el) {
@@ -316,7 +337,8 @@
             if (!currentPostText) return;
             const fd = new FormData();
             fd.append('post_text', currentPostText);
-            if (uploadedImagePath) fd.append('image_path', uploadedImagePath);
+            var paths = getAllImagePaths();
+            paths.forEach(function(p) { fd.append('image_path', p); });
             try {
                 const r = await fetch('/publish', { method: 'POST', body: fd });
                 const d = await r.json();
@@ -324,7 +346,7 @@
                 var extra = d.photo_warning ? '\n\n⚠️ ' + d.photo_warning : '';
                 openModal('✅ Опубликовано!', d.message + ' (ID: ' + d.post_id + ')' + extra);
                 resetResult();
-                clearImage();
+                clearAllImages();
                 loadScheduled();
             } catch (err) {
                 openModal('❌ Ошибка', err.message, true);
@@ -349,14 +371,15 @@
             const fd = new FormData();
             fd.append('post_text', currentPostText);
             fd.append('publish_at', time);
-            if (uploadedImagePath) fd.append('image_path', uploadedImagePath);
+            var paths = getAllImagePaths();
+            paths.forEach(function(p) { fd.append('image_path', p); });
             try {
                 const r = await fetch('/schedule', { method: 'POST', body: fd });
                 const d = await r.json();
                 if (!r.ok) throw new Error(d.error);
                 showToast(d.message);
                 resetResult();
-                clearImage();
+                clearAllImages();
                 loadScheduled();
             } catch (err) {
                 showToast(err.message, true);
@@ -450,7 +473,8 @@
             rError.style.display = 'none';
 
             const formData = new FormData(this);
-            if (uploadedImagePath) formData.append('image_path', uploadedImagePath);
+            var paths = getAllImagePaths();
+            paths.forEach(function(p) { formData.append('image_path', p); });
             try {
                 const resp = await fetch('/generate', { method: 'POST', body: formData });
                 const data = await resp.json();
@@ -459,15 +483,20 @@
                 document.getElementById('postText').innerHTML = renderPostText(data.post);
                 rContent.style.display = 'block';
                 isFavorited = false;
-                if (data.image) {
-                    uploadedImagePath = '/uploads/' + data.image;
-                    document.getElementById('image_url').value = uploadedImagePath;
+                var imgs = data.images || (data.image ? [data.image] : []);
+                if (imgs.length > 0) {
                     var pi = document.getElementById('postImage');
-                    var pip2 = document.getElementById('postPreviewImg');
+                    pi.innerHTML = '';
                     pi.style.display = 'block';
-                    pip2.src = uploadedImagePath;
-                    pip2.onerror = function(){ showToast('⚠️ Фото не загрузилось', true); pi.style.display='none'; };
-                    previewImage();
+                    imgs.forEach(function(imgName) {
+                        var imgUrl = '/uploads/' + imgName;
+                        var imgEl = document.createElement('img');
+                        imgEl.src = imgUrl;
+                        imgEl.className = 'post-preview-img';
+                        imgEl.onerror = function(){ showToast('\u26A0\uFE0F \u0424\u043E\u0442\u043E \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u043B\u043E\u0441\u044C', true); };
+                        pi.appendChild(imgEl);
+                        addImage(imgUrl);
+                    });
                 } else {
                     document.getElementById('postImage').style.display = 'none';
                 }
