@@ -285,7 +285,7 @@ def upload_to_github(image_path):
 
 # ===== ПУБЛИКАЦИЯ В ВК =====
 
-def publish_to_vk(post_text, image_path=None):
+def publish_to_vk(post_text, image_paths=None):
     config = load_vk_config()
     if not config.get("enabled") or not config.get("access_token") or not config.get("community_id"):
         return {"success": False, "error": "ВК не настроен. Заполните данные в data/config.json"}
@@ -297,43 +297,45 @@ def publish_to_vk(post_text, image_path=None):
     token = config["access_token"]
     user_token = config.get("user_token") or None
     attachments = []
+    gh_urls = []
 
-    abs_path = None
-    image_url = None
+    if image_paths:
+        for image_path in image_paths:
+            if not image_path:
+                continue
+            dbg(f"publish: processing image_path='{image_path}'")
+            abs_path = None
+            if image_path.startswith("http"):
+                try:
+                    hdrs = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                    resp = urlopen(Request(image_path, headers=hdrs), timeout=15)
+                    ext = ".jpg"
+                    ct = resp.headers.get("Content-Type", "")
+                    if "png" in ct: ext = ".png"
+                    elif "gif" in ct: ext = ".gif"
+                    elif "webp" in ct: ext = ".webp"
+                    abs_path = os.path.join(UPLOADS_PATH, f"_tmp_{uuid.uuid4().hex}{ext}")
+                    with open(abs_path, "wb") as f:
+                        f.write(resp.read())
+                except:
+                    continue
+            else:
+                fn = os.path.basename(image_path)
+                for candidate in [os.path.join(UPLOADS_PATH, fn),
+                                  os.path.join(UPLOADS_PATH, fn.replace("/uploads/", ""))]:
+                    dbg(f"publish: checking candidate {candidate}")
+                    if os.path.exists(candidate):
+                        abs_path = candidate
+                        dbg(f"publish: found file at {abs_path}")
+                        break
+                if not abs_path:
+                    dbg("publish: file NOT FOUND in uploads")
+                    continue
 
-    if image_path:
-        dbg(f"publish: image_path='{image_path}'")
-        if image_path.startswith("http"):
-            image_url = image_path
-            try:
-                hdrs = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                resp = urlopen(Request(image_path, headers=hdrs), timeout=15)
-                ext = ".jpg"
-                ct = resp.headers.get("Content-Type", "")
-                if "png" in ct: ext = ".png"
-                elif "gif" in ct: ext = ".gif"
-                elif "webp" in ct: ext = ".webp"
-                abs_path = os.path.join(UPLOADS_PATH, f"_tmp_{uuid.uuid4().hex}{ext}")
-                with open(abs_path, "wb") as f:
-                    f.write(resp.read())
-            except:
-                pass
-        else:
-            fn = os.path.basename(image_path)
-            for candidate in [os.path.join(UPLOADS_PATH, fn),
-                              os.path.join(UPLOADS_PATH, fn.replace("/uploads/", ""))]:
-                dbg(f"publish: checking candidate {candidate}")
-                if os.path.exists(candidate):
-                    abs_path = candidate
-                    dbg(f"publish: found file at {abs_path}")
-                    break
-            if not abs_path:
-                dbg("publish: file NOT FOUND in uploads")
+            if not (abs_path and os.path.exists(abs_path)):
+                continue
 
-        if abs_path and os.path.exists(abs_path):
             native_done = False
-            # 1. Пробуем VK (user_token или group_token)
-            upload_token = user_token or token
             for attempt_label, attempt_token in [("user_token", user_token), ("group_token", token)]:
                 if not attempt_token or native_done:
                     continue
@@ -382,24 +384,24 @@ def publish_to_vk(post_text, image_path=None):
                 except Exception as e:
                     dbg(f"publish: VK upload {attempt_label} failed: {e}")
 
-            # 2. GitHub — если нативное фото не загрузилось
             if not native_done and os.path.exists(abs_path):
                 gh_url = upload_to_github(abs_path)
                 if gh_url:
-                    image_url = gh_url
+                    gh_urls.append(gh_url)
                 else:
                     dbg("publish: GitHub upload failed, no URL")
 
-        # Ссылка на фото в текст поста (только если нативное фото не прикрепилось)
-        if image_url and not attachments:
-            post_text += f"\n\n{image_url}"
-            dbg(f"publish: added GitHub URL to text")
-        elif image_url and attachments:
-            dbg("publish: native photo attached, skipping URL in text")
-        elif not image_url and not attachments:
-            dbg("publish: no photo at all")
+    # Ссылки GitHub в текст (если нет нативных фото)
+    if gh_urls and not attachments:
+        post_text += "\n\n" + "\n".join(gh_urls)
+        dbg(f"publish: added {len(gh_urls)} GitHub URLs to text")
+    elif gh_urls and attachments:
+        dbg("publish: native photos attached, skipping URLs in text")
+    elif not gh_urls and not attachments:
+        if image_paths:
+            dbg("publish: no photos could be uploaded at all")
     else:
-        dbg("publish: image_path is empty/None")
+        dbg("publish: no image_paths provided")
 
     post_text = post_text.replace("\r\n", "\n")
     dbg(f"publish: final text length={len(post_text)}, attachments={len(attachments)}")
@@ -415,7 +417,7 @@ def publish_to_vk(post_text, image_path=None):
         return {"success": False, "error": resp["error"]["error_msg"]}
     dbg(f"publish: SUCCESS post_id={resp['response']['post_id']}")
     result = {"success": True, "post_id": resp["response"]["post_id"]}
-    if image_url and not attachments:
+    if gh_urls and not attachments:
         result["photo_warning"] = "фото ссылкой (для встроенного задайте user_token в /vk-setup)"
     return result
 
@@ -429,7 +431,10 @@ def scheduler_loop():
             remaining = []
             for post in posts:
                 if not post.get("published") and post.get("publish_at") <= now:
-                    result = publish_to_vk(post["text"], post.get("image_path"))
+                    imgs = post.get("image_paths")
+                    if not imgs and post.get("image_path"):
+                        imgs = [post["image_path"]]
+                    result = publish_to_vk(post["text"], imgs)
                     post["published"] = True
                     post["published_at"] = now
                     post["publish_error"] = result.get("error") if not result["success"] else None
@@ -452,32 +457,31 @@ def index():
 def generate():
     product_url = request.form.get("product_url", "").strip()
     mood = request.form.get("mood", "креативный")
-    image_url = request.form.get("image_url", "").strip()
-    image_path = request.form.get("image_path", "").strip()
+    image_paths = request.form.getlist("image_path")
     if not product_url:
         return jsonify({"error": "Введите ссылку на товар"}), 400
     try:
         post = generate_post(product_url, mood)
-        image = None
-        # 1. Уже загруженный файл
-        if image_path and image_path.startswith("/uploads/"):
-            fn = os.path.basename(image_path)
-            if os.path.exists(os.path.join(UPLOADS_PATH, fn)):
-                image = fn
-        if not image and image_path and not image_path.startswith("http"):
-            fn = os.path.basename(image_path)
-            if os.path.exists(os.path.join(UPLOADS_PATH, fn)):
-                image = fn
-        # 2. Ссылка из формы
-        if not image and image_url:
-            image = download_image(image_url, image_url)
-            print(f"[DEBUG] Downloaded from URL: {image_url} -> {image}")
-        # 3. Извлечь со страницы товара
-        if not image:
+        images = []
+        # 1. Уже загруженные файлы
+        for ip in image_paths:
+            ip = ip.strip()
+            if ip.startswith("/uploads/"):
+                fn = os.path.basename(ip)
+                if os.path.exists(os.path.join(UPLOADS_PATH, fn)):
+                    if fn not in images:
+                        images.append(fn)
+            elif ip and not ip.startswith("http"):
+                fn = os.path.basename(ip)
+                if os.path.exists(os.path.join(UPLOADS_PATH, fn)) and fn not in images:
+                    images.append(fn)
+        # 2. Извлечь со страницы товара (если нет фото)
+        if not images:
             print(f"[DEBUG] Extracting from product page: {product_url}")
-            image = extract_product_image(product_url)
-            print(f"[DEBUG] Extraction result: {image}")
-        return jsonify({"post": post, "image": image})
+            img = extract_product_image(product_url)
+            if img:
+                images.append(img)
+        return jsonify({"post": post, "images": images})
     except Exception as e:
         return jsonify({"error": f"Ошибка генерации: {str(e)}"}), 500
 
@@ -534,10 +538,11 @@ def serve_upload(name):
 @app.route("/publish", methods=["POST"])
 def publish():
     post_text = request.form.get("post_text", "").strip()
-    image_path = request.form.get("image_path", "").strip()
+    image_paths = request.form.getlist("image_path")
+    image_paths = [p.strip() for p in image_paths if p.strip()]
     if not post_text:
         return jsonify({"error": "Нет текста поста"}), 400
-    result = publish_to_vk(post_text, image_path or None)
+    result = publish_to_vk(post_text, image_paths or None)
     if result["success"]:
         msg = "Пост опубликован!"
         resp = {"message": msg, "post_id": result["post_id"]}
@@ -553,13 +558,14 @@ def schedule():
     if not post_text or not publish_at:
         return jsonify({"error": "Нет текста поста или времени"}), 400
     posts = read_json(SCHEDULED_PATH)
-    image_path = request.form.get("image_path", "").strip() or None
+    image_paths = request.form.getlist("image_path")
+    image_paths = [p.strip() for p in image_paths if p.strip()]
     posts.append({
         "id": str(int(time.time())),
         "text": post_text,
         "publish_at": publish_at,
         "published": False,
-        "image_path": image_path,
+        "image_paths": image_paths,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
     })
     write_json(SCHEDULED_PATH, posts)
